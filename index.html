@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- 适配手机屏幕和刘海屏 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- PWA 伪装 App 代码：让添加到主屏幕后完美全屏 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="技能高考">
+<title>技能高考备考</title>
+<!-- 引入 Supabase 官方库 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--blue:#00A0E9;--blue-soft:#e8f6fd;--green:#22c55e;--green-soft:#eafaf1;--red:#ef4444;--red-soft:#fef2f2;--yellow:#f59e0b;--bg:#f2f5f8;--text:#1a1a1a;--muted:#8a919c;--border:#e6eaef;--card:#ffffff;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:16px;line-height:1.6;display:flex;justify-content:center;height:100vh;height:100dvh;overflow:hidden;}
+.app{width:100%;max-width:480px;height:100%;display:flex;flex-direction:column;background:var(--bg);position:relative;overflow:hidden;}
+
+/* 页面视图控制 */
+.view{display:none;flex-direction:column;flex:1;height:100%;overflow-y:auto;
+  /* 给底部导航栏和小黑条留出空间 */
+  padding-bottom:calc(60px + env(safe-area-inset-bottom));
+}
+.view.active{display:flex;}
+
+/* 顶部栏 */
+.topbar{background:linear-gradient(135deg,var(--blue),#4fc3f7);color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;flex-shrink:0; padding-top: calc(16px + env(safe-area-inset-top));}
+.topbar .btn-back{border:none;background:transparent;color:#fff;font-size:15px;cursor:pointer;}
+.topbar .title{font-size:17px;font-weight:600;}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.fav-btn{border:none;background:transparent;color:#fff;font-size:22px;cursor:pointer;line-height:1;}
+.fav-btn.active{color:#fbbf24;}
+.mode-btn{border:none;cursor:pointer;background:#fff;color:var(--blue);padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;}
+.mode-btn.recite{background:#fff7ed;color:#f97316;}
+.sheet-btn{border:none;background:rgba(255,255,255,0.2);color:#fff;font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer;}
+
+/* 底部导航栏：核心修复部位！避开 iPhone 小黑条 */
+.tabbar{
+  position:absolute; bottom:0; left:0; width:100%; 
+  background:#fff; border-top:1px solid var(--border); display:flex; z-index:100;
+  /* 自动计算高度和小黑条的安全距离 */
+  height:calc(60px + env(safe-area-inset-bottom));
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:11px;cursor:pointer;}
+.tab-item.active{color:var(--blue);}
+.tab-icon{font-size:20px;margin-bottom:2px;}
+
+/* 首页 */
+.hero{padding:40px 20px 30px;text-align:center;background:linear-gradient(180deg,var(--blue) 0%,var(--bg) 100%);color:#fff;}
+.hero h1{margin:0 0 10px;font-size:24px;}
+.section-title{padding:15px 20px 5px;font-size:14px;font-weight:700;color:var(--muted);}
+.card-list{padding:10px 20px;display:flex;flex-direction:column;gap:12px;}
+.menu-card{background:var(--card);border-radius:16px;padding:16px 20px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.03);cursor:pointer;}
+.menu-card .icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;}
+.menu-card .info{flex:1;}
+.menu-card .info h3{margin:0 0 4px;font-size:16px;}
+.menu-card .info p{margin:0;font-size:12px;color:var(--muted);}
+
+/* 刷题界面 */
+.progress-wrap{background:#fff;padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;}
+.progress-bar{flex:1;height:4px;background:#eef2f6;border-radius:999px;overflow:hidden;}
+.progress-fill{height:100%;width:0;background:linear-gradient(90deg,var(--blue),#4fc3f7);transition:width .3s;}
+.timer{font-size:14px;font-weight:bold;color:var(--red);font-family:monospace;}
+.question-area{padding:20px 18px;flex:1;}
+.q-badge{display:inline-block;background:var(--blue-soft);color:var(--blue);font-size:12px;font-weight:700;padding:3px 12px;border-radius:999px;margin-bottom:12px;}
+.q-text{font-size:17px;font-weight:500;line-height:1.7;margin:0 0 20px; white-space: pre-wrap;}
+.options{display:flex;flex-direction:column;gap:12px;}
+
+.opt{width:100%;text-align:left;background:#fff;border:2px solid var(--border);border-radius:14px;padding:16px 18px;font-size:16px;font-weight:500;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:12px;transition:all .15s;}
+.opt .letter{width:26px;height:26px;border-radius:50%;background:var(--bg);color:var(--muted);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.opt.selected{border-color:var(--blue);background:var(--blue-soft);}
+.opt.selected .letter{background:var(--blue);color:#fff;}
+.opt.correct{border-color:var(--green);background:var(--green-soft);color:var(--green);}
+.opt.correct .letter{background:var(--green);color:#fff;}
+.opt.incorrect{border-color:var(--red);background:var(--red-soft);color:var(--red);}
+.opt.incorrect .letter{background:var(--red);color:#fff;}
+.opt.reveal-correct{border-color:var(--green);background:var(--green-soft);}
+.opt.reveal-correct .letter{background:var(--green);color:#fff;}
+.opt.disabled{pointer-events:none;}
+
+/* 主观题自评 */
+.subj-btn{width:100%; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:bold; margin-bottom:10px; cursor:pointer;}
+.subj-btn-view{background:var(--blue); color:#fff;}
+.subj-btn-right{background:var(--green); color:#fff;}
+.subj-btn-wrong{background:var(--red); color:#fff;}
+
+/* 解析区 */
+.explain-box{display:none;margin-top:20px;background:#fff;border-radius:14px;padding:16px;border:1px solid var(--border);}
+.explain-box.show{display:block;}
+.explain-box strong{color:var(--blue);display:block;margin-bottom:6px;font-size:13px;}
+.result-banner{padding:10px 14px;border-radius:10px;font-size:14px;font-weight:600;margin-bottom:12px;}
+.result-banner.ok{background:var(--green-soft);color:var(--green);}
+.result-banner.no{background:var(--red-soft);color:var(--red);}
+.remove-tip{font-size:12px;color:var(--muted);margin-top:8px;text-align:center;display:none;}
+.bottom-bar{padding:16px 18px;background:#fff;border-top:1px solid var(--border);display:flex;gap:12px;}
+.btn-nav{flex:1;border:none;font-size:16px;font-weight:700;padding:14px;border-radius:12px;cursor:pointer;}
+.btn-nav.prev{background:var(--bg);color:var(--muted);}
+.btn-nav.next{background:var(--blue);color:#fff;}
+.btn-nav.submit{background:var(--red);color:#fff;}
+.btn-nav:disabled{opacity:.5;pointer-events:none;}
+
+/* 答题卡 */
+.modal-mask{position:absolute;inset:0;background:rgba(0,0,0,0.5);z-index:200;display:none;align-items:flex-end;}
+.modal-mask.show{display:flex;}
+.modal-content{width:100%;background:#fff;border-radius:20px 20px 0 0;padding:20px;padding-bottom:calc(20px + env(safe-area-inset-bottom));max-height:70vh;display:flex;flex-direction:column;}
+.modal-header{display:flex;justify-content:space-between;margin-bottom:15px;font-weight:bold;font-size:16px;}
+.modal-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;overflow-y:auto;padding-bottom:20px;}
+.grid-item{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--bg);color:var(--muted);font-weight:bold;cursor:pointer;border:1px solid var(--border);}
+.grid-item.done{background:var(--blue);color:#fff;border-color:var(--blue);}
+.grid-item.current{border:2px solid var(--red);color:var(--red);background:#fff;}
+.grid-item.current.done{color:var(--blue);border-color:var(--blue);}
+
+/* 导入与设置 */
+.import-area{padding: 20px;}
+.import-textarea{width:100%; height:160px; padding:15px; border:1px solid var(--border); border-radius:12px; font-family:monospace; font-size:14px; resize:none; outline:none; margin-bottom:15px;}
+.import-btn{width:100%; background:var(--blue); color:#fff; border:none; padding:14px; border-radius:12px; font-size:16px; font-weight:bold; cursor:pointer; margin-bottom:10px;}
+.import-btn-upload{background:#fff; color:var(--blue); border:2px solid var(--blue);}
+
+.setting-item { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid var(--border); }
+.setting-item label { font-weight: bold; color: var(--text); font-size: 15px;}
+.input-box { width: 80px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: 16px; font-weight: bold; color: var(--blue); outline: none; }
+.input-box:focus { border-color: var(--blue); }
+
+/* 背诵 */
+.accordion{background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden;border:1px solid var(--border);}
+.accordion-header{padding:16px;font-weight:600;display:flex;justify-content:space-between;cursor:pointer;}
+.accordion-content{padding:0 16px;max-height:0;overflow:hidden;transition:max-height .3s ease;background:#fafafa;font-size:14px;}
+.accordion.open .accordion-content{max-height:800px;padding:16px;border-top:1px solid var(--border);}
+
+.loading-tip { text-align: center; padding: 50px 20px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="view active" id="view-home">
+    <div class="hero"><h1>技能高考备考</h1><p>Supabase 云数据库版</p></div>
+    <div id="loading-data" class="loading-tip">正在连接云端数据库...<br>如果一直卡住，请刷新重试</div>
+    
+    <div id="home-content" style="display:none;">
+      <div class="section-title">科目练习</div>
+      <div class="card-list">
+        <div class="menu-card" onclick="startSubject('chinese')"><div class="icon" style="background:#fef2f2;color:#ef4444;">📕</div><div class="info"><h3>语文</h3><p id="count-chinese">0 题</p></div></div>
+        <div class="menu-card" onclick="startSubject('math')"><div class="icon" style="background:#e8f6fd;color:#00A0E9;">📘</div><div class="info"><h3>数学</h3><p id="count-math">0 题</p></div></div>
+        <div class="menu-card" onclick="startSubject('english')"><div class="icon" style="background:#fffbeb;color:#f59e0b;">📙</div><div class="info"><h3>英语</h3><p id="count-english">0 题</p></div></div>
+        <div class="menu-card" onclick="startSubject('computer')"><div class="icon" style="background:#f3e8ff;color:#a855f7;">💻</div><div class="info"><h3>计算机</h3><p id="count-computer">0 题</p></div></div>
+      </div>
+      <div class="section-title">全真模拟</div>
+      <div class="card-list">
+        <div class="menu-card" onclick="startExam()" style="border: 2px solid var(--blue);"><div class="icon" style="background:var(--blue);color:#fff;">📝</div><div class="info"><h3 style="color:var(--blue);">自定义模拟考</h3><p id="exam-config-desc">加载设置中...</p></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-study">
+    <header class="topbar"><span class="title">知识点背诵</span></header>
+    <div class="section-title">语文古诗文</div><div class="card-list" id="study-chinese"></div>
+    <div class="section-title">数学公式</div><div class="card-list" id="study-math"></div>
+    <div class="section-title">英语语法</div><div class="card-list" id="study-english"></div>
+    <div class="section-title">计算机基础</div><div class="card-list" id="study-computer"></div>
+  </div>
+
+  <div class="view" id="view-profile">
+    <header class="topbar"><span class="title">我的与工具</span></header>
+    <div class="card-list" style="margin-top:20px;">
+      <div class="menu-card" onclick="showView('view-import')" style="border:2px solid var(--blue);">
+        <div class="icon" style="background:var(--blue-soft);color:var(--blue);">📥</div><div class="info"><h3 style="color:var(--blue);">智能批量导入</h3><p>解析文本，一键上传到云端数据库</p></div>
+      </div>
+      <div class="menu-card" onclick="showSettings()">
+        <div class="icon" style="background:#e0f2fe;color:#0284c7;">⚙️</div><div class="info"><h3>模拟考设置</h3><p>自定义时间及各科题量</p></div>
+      </div>
+      <div class="menu-card" onclick="startWrongPractice()"><div class="icon" style="background:#fee2e2;color:#ef4444;">❌</div><div class="info"><h3>错题本</h3><p id="wrongCountText">收集答错的题目</p></div></div>
+      <div class="menu-card" onclick="startFavPractice()"><div class="icon" style="background:#fef3c7;color:#d97706;">⭐</div><div class="info"><h3>我的收藏</h3><p id="favCountText">点击查看收藏的题目</p></div></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-settings">
+    <header class="topbar"><button class="btn-back" onclick="goBackHome()">← 返回</button><span class="title">模拟考设置</span><span></span></header>
+    <div class="import-area">
+      <div class="setting-item"><label>考试时间 (分钟)</label><input type="number" id="set-time" class="input-box" value="5" min="1"></div>
+      <div class="setting-item"><label>语文 抽取题数</label><input type="number" id="set-chinese" class="input-box" value="8" min="0"></div>
+      <div class="setting-item"><label>数学 抽取题数</label><input type="number" id="set-math" class="input-box" value="8" min="0"></div>
+      <div class="setting-item"><label>英语 抽取题数</label><input type="number" id="set-english" class="input-box" value="4" min="0"></div>
+      <button class="import-btn" onclick="saveSettings()">保存设置</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-import">
+    <header class="topbar"><button class="btn-back" onclick="goBackHome()">← 返回</button><span class="title">云端导入</span><span></span></header>
+    <div class="import-area">
+      <input type="file" id="fileInput" accept=".txt" style="display:none;" onchange="handleFileSelect(event)">
+      <button class="import-btn import-btn-upload" onclick="document.getElementById('fileInput').click()">📂 选择 TXT 文件读取</button>
+      <textarea id="importText" class="import-textarea" placeholder="在此粘贴题目文本... (格式：题目 + ABCD选项 + 答案)"></textarea>
+      <button class="import-btn" id="btnImportExam" onclick="runImport('exam')">📝 解析题目并上传至云端</button>
+      <button class="import-btn" style="background:#f59e0b;color:#fff;" onclick="runImport('study')">📖 解析为背诵卡片(存本地)</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-question">
+    <header class="topbar">
+      <button class="btn-back" onclick="goBackHome()">← 返回</button>
+      <span class="title" id="pageTitle">练习</span>
+      <div class="topbar-right">
+        <button class="sheet-btn" id="sheetBtn" onclick="openSheet()" style="display:none;">答题卡</button>
+        <button class="fav-btn" id="favBtn" onclick="toggleFav()">☆</button>
+        <button class="mode-btn" id="modeBtn" onclick="toggleRecite()">背题</button>
+      </div>
+    </header>
+    <div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div><div class="timer" id="timerText" style="display:none;">05:00</div></div>
+    <div class="question-area">
+      <span class="q-badge" id="qTypeBadge">单选题 <span id="qIndexText"></span></span>
+      <p class="q-text" id="qText"></p>
+      <div class="options" id="optionsBox"></div>
+      <div class="explain-box" id="explainBox">
+        <div class="result-banner" id="resultBanner"></div>
+        <strong>解析</strong><span id="explainText"></span>
+        <div class="remove-tip" id="removeTip">🎉 答对啦！该题已从错题本移除。</div>
+      </div>
+    </div>
+    <div class="bottom-bar">
+      <button class="btn-nav prev" id="prevBtn" onclick="prevQuestion()">上一题</button>
+      <button class="btn-nav next" id="nextBtn" onclick="nextQuestion()">下一题</button>
+      <button class="btn-nav submit" id="submitBtn" style="display:none;" onclick="submitExam()">交卷</button>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="sheetModal" onclick="closeSheet(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header"><span>答题卡</span><span style="cursor:pointer;color:var(--muted);" onclick="closeSheet(true)">✕</span></div>
+      <div class="modal-grid" id="sheetGrid"></div>
+    </div>
+  </div>
+
+  <!-- 底部导航栏 -->
+  <div class="tabbar">
+    <div class="tab-item active" onclick="switchTab('home')" id="tab-home"><span class="tab-icon">🏠</span>首页</div>
+    <div class="tab-item" onclick="switchTab('study')" id="tab-study"><span class="tab-icon">📖</span>背诵</div>
+    <div class="tab-item" onclick="switchTab('profile')" id="tab-profile"><span class="tab-icon">👤</span>我的</div>
+  </div>
+</div>
+
+<script>
+/* ================= 1. 数据库连接 ================= */
+const SUPABASE_URL = 'https://qguzbgsucrktalfugprb.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFndXpiZ3N1Y3JrdGFsZnVncHJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNjUwOTUsImV4cCI6MjEwODk0MTA5NX0.NIv5V9Bx2h67fIckFJ6szTbROiyyBvbALI-OGqTBVPU';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ================= 2. 核心数据结构 ================= */
+var BANK = { chinese: [], math: [], english: [], computer: [] };
+var STUDY = { chinese: [], math: [], english: [], computer: [] };
+var wrongBook = [], favBook = [];
+var examConfig = { timeLimit: 5, chineseCount: 8, mathCount: 8, englishCount: 4 };
+
+try {
+  var sw = localStorage.getItem("xzt_wrong_book"); if(sw) wrongBook = JSON.parse(sw);
+  var sf = localStorage.getItem("xzt_fav_book"); if(sf) favBook = JSON.parse(sf);
+  var ec = localStorage.getItem("xzt_exam_config"); if(ec) examConfig = JSON.parse(ec);
+  var us = localStorage.getItem("xzt_user_study"); if(us) { var ps = JSON.parse(us); for(var k in ps) STUDY[k] = STUDY[k].concat(ps[k]); }
+} catch(e){}
+
+// 从 Supabase 读取数据
+async function loadCloudData() {
+  try {
+    const { data, error } = await supabaseClient.from('questions').select('*');
+    if (error) throw error;
+    
+    BANK = { chinese: [], math: [], english: [], computer: [] };
+    data.forEach(item => {
+      if(BANK[item.subject]) BANK[item.subject].push(item);
+    });
+    
+    document.getElementById('loading-data').style.display = "none";
+    document.getElementById('home-content').style.display = "block";
+    updateCounts();
+    updateHomeStats();
+    updateExamConfigDesc();
+
+  } catch (error) {
+    console.error("读取云端失败：", error);
+    document.getElementById('loading-data').innerHTML = "连接云端失败！<br>请检查网络，并刷新重试。<br><br><span style='color:red;font-size:12px'>" + error.message + "</span>";
+  }
+}
+
+/* ================= 3. 设置与统计 ================= */
+function updateExamConfigDesc() {
+  var desc = document.getElementById("exam-config-desc");
+  if (desc) desc.innerText = examConfig.timeLimit + "分钟 | 语:" + examConfig.chineseCount + " 数:" + examConfig.mathCount + " 英:" + examConfig.englishCount;
+}
+function showSettings() {
+  document.getElementById('set-time').value = examConfig.timeLimit; document.getElementById('set-chinese').value = examConfig.chineseCount; document.getElementById('set-math').value = examConfig.mathCount; document.getElementById('set-english').value = examConfig.englishCount; showView('view-settings');
+}
+function saveSettings() {
+  var t = parseInt(document.getElementById('set-time').value); var c = parseInt(document.getElementById('set-chinese').value); var m = parseInt(document.getElementById('set-math').value); var e = parseInt(document.getElementById('set-english').value);
+  if (isNaN(t) || t <= 0 || isNaN(c) || c < 0 || isNaN(m) || m < 0 || isNaN(e) || e < 0) return alert("请输入有效数字");
+  examConfig = { timeLimit: t, chineseCount: c, mathCount: m, englishCount: e };
+  try { localStorage.setItem("xzt_exam_config", JSON.stringify(examConfig)); } catch(e){}
+  updateExamConfigDesc(); alert("设置已保存！"); goBackHome();
+}
+function updateCounts() {
+  document.getElementById('count-chinese').innerText = BANK.chinese.length + " 题"; document.getElementById('count-math').innerText = BANK.math.length + " 题"; document.getElementById('count-english').innerText = BANK.english.length + " 题"; document.getElementById('count-computer').innerText = BANK.computer.length + " 题";
+}
+function updateHomeStats() {
+  var wTxt = document.getElementById('wrongCountText'); if(wTxt) { wTxt.innerText = wrongBook.length > 0 ? "共 " + wrongBook.length + " 道错题" : "暂无错题"; wTxt.style.color = wrongBook.length > 0 ? "var(--red)" : "var(--muted)"; }
+  var fTxt = document.getElementById('favCountText'); if(fTxt) { fTxt.innerText = favBook.length > 0 ? "已收藏 " + favBook.length + " 道题" : "暂无收藏"; fTxt.style.color = favBook.length > 0 ? "var(--yellow)" : "var(--muted)"; }
+}
+function saveData() { try { localStorage.setItem("xzt_wrong_book", JSON.stringify(wrongBook)); localStorage.setItem("xzt_fav_book", JSON.stringify(favBook)); } catch(e){} updateHomeStats(); }
+function addToWrong(id) { if(wrongBook.indexOf(id) === -1) { wrongBook.push(id); saveData(); } }
+function removeFromWrong(id) { var i = wrongBook.indexOf(id); if(i > -1) { wrongBook.splice(i, 1); saveData(); } }
+function toggleFav() { var q = currentQuestions[appMode === 'exam' ? examIndex : practiceIndex]; if(!q) return; var idx = favBook.indexOf(q.id); if(idx > -1) favBook.splice(idx, 1); else favBook.push(q.id); saveData(); renderQuestion(); }
+
+/* ================= 4. 智能导入与云端上传 ================= */
+function detectSubject(text) {
+  var t = text.toLowerCase();
+  if (t.match(/english|the |he |she |is |are |was |were|时态|语态/)) return 'english';
+  if (t.match(/作者|诗句|字音|错别字|成语|语病|修辞|阅读|文言文|现代文|《|》/)) return 'chinese';
+  if (t.match(/计算机|网络|ip|mac|协议|内存|cpu/)) return 'computer';
+  return 'math';
+}
+function handleFileSelect(event) {
+  var file = event.target.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) { document.getElementById("importText").value = e.target.result; alert("文件读取成功！"); };
+  reader.readAsText(file, 'UTF-8'); event.target.value = "";
+}
+async function runImport(type) {
+  var raw = document.getElementById("importText").value.trim(); if(!raw) return alert("请先输入文本！");
+  
+  if (type === 'exam') {
+    var btn = document.getElementById('btnImportExam');
+    btn.innerText = "正在解析并上传，请稍候..."; btn.disabled = true;
+
+    var blocks = raw.replace(/\r\n/g, '\n').split(/\n(?=\s*\d+[\.\、\s])/);
+    var parsed = { chinese: [], math: [], english: [], computer: [] };
+    var choiceCnt = 0, textCnt = 0;
+    
+    blocks.forEach(function(block) {
+      block = block.trim(); if(!block) return;
+      var ansMatch = block.match(/答案[：:\s]*([\s\S]*?)(?=(?:\n\s*\d+[\.\、\s])|$)/); if(!ansMatch) return; 
+      var answer = ansMatch[1].trim();
+      var expMatch = block.match(/解析[：:\s]*([\s\S]*?)(?=(?:\n\s*\d+[\.\、\s])|$)/);
+      var explain = expMatch ? expMatch[1].trim() : "暂无解析";
+      var optRegex = /(?:^|\n)\s*([A-D])[\.\、\s]\s*(.*?)(?=\n\s*[A-D][\.\、\s]|\n\s*答案|$)/g;
+      var options = [], match;
+      while ((match = optRegex.exec(block)) !== null) { options.push(match[2].replace(/\n/g, '').trim()); }
+      var qText = block.split(/(?:^|\n)\s*[A-D][\.\、\s]/)[0].split(/(?:^|\n)\s*答案/)[0].replace(/^\s*\d+[\.\、\s]*/, '').trim(); 
+      var sub = detectSubject(qText);
+      
+      if(options.length >= 2 && /^[A-Da-d]$/.test(answer)) {
+        choiceCnt++;
+        parsed[sub].push({ subject: sub, type:'choice', q: qText, options: options, answer: answer.toUpperCase(), explain: explain });
+      } else if (qText.length > 0 && answer.length > 0) {
+        textCnt++;
+        parsed[sub].push({ subject: sub, type:'text', q: qText, answer: answer, explain: explain });
+      }
+    });
+
+    if(choiceCnt + textCnt === 0) {
+      btn.innerText = "📝 解析题目并上传至云端"; btn.disabled = false;
+      return alert("未识别到有效题目。请检查格式。");
+    }
+
+    try {
+      // 批量插入到云端数据库
+      for(var k in parsed) {
+        if(parsed[k].length > 0) {
+          const { error } = await supabaseClient.from('questions').insert(parsed[k]);
+          if(error) throw error;
+        }
+      }
+      alert("成功上传 " + (choiceCnt + textCnt) + " 道题到云端！");
+      document.getElementById("importText").value = "";
+      await loadCloudData(); // 重新拉取最新数据
+      switchTab('home');
+    } catch (e) {
+      alert("上传失败，请检查数据库策略是否允许写入。\n" + e.message);
+    } finally {
+      btn.innerText = "📝 解析题目并上传至云端"; btn.disabled = false;
+    }
+
+  } else {
+    // 本地导入（背诵卡）
+    var blocks = raw.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+    var parsed = { chinese: [], math: [], english: [], computer: [] };
+    blocks.forEach(function(block) {
+      block = block.trim(); if(!block) return;
+      var lines = block.split('\n'); var title = lines[0].replace(/[#【】]/g, '').trim(); var content = lines.slice(1).join('\n').trim();
+      if (!content && title.length > 20) { content = title; title = title.substring(0, 15) + "..."; }
+      if(content) {
+        var sub = detectSubject(title + content);
+        parsed[sub].push({ title: title, content: content, note: "本地导入" });
+      }
+    });
+    var userStudy = JSON.parse(localStorage.getItem("xzt_user_study") || "{}");
+    for(var k in parsed) {
+      if(parsed[k].length > 0) {
+        STUDY[k] = STUDY[k].concat(parsed[k]);
+        if(!userStudy[k]) userStudy[k] = [];
+        userStudy[k] = userStudy[k].concat(parsed[k]);
+      }
+    }
+    try { localStorage.setItem("xzt_user_study", JSON.stringify(userStudy)); } catch(e){}
+    document.getElementById("importText").value = ""; alert("背诵资料导入成功！"); switchTab('study');
+  }
+}
+
+/* ================= 5. UI 与练习逻辑 ================= */
+var views = document.querySelectorAll('.view'), tabItems = document.querySelectorAll('.tab-item');
+function showView(id) { views.forEach(v => v.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+function switchTab(tab) {
+  clearInterval(examTimer);
+  tabItems.forEach(t => t.classList.remove('active')); document.getElementById('tab-' + tab).classList.add('active');
+  if(tab === 'home') { updateCounts(); showView('view-home'); }
+  if(tab === 'study') { renderStudy(); showView('view-study'); }
+  if(tab === 'profile') { updateHomeStats(); showView('view-profile'); }
+}
+function goBackHome() { clearInterval(examTimer); switchTab('home'); }
+function toggleAcc(header) { header.parentElement.classList.toggle('open'); var span = header.querySelector('span'); if(span) span.innerText = header.parentElement.classList.contains('open') ? '▲' : '▼'; }
+function renderStudy() {
+  function buildHtml(list) {
+    var html = ""; if(!list || list.length === 0) return '<div style="font-size:12px;color:#999;padding:10px;">暂无资料</div>';
+    for(var i=0; i<list.length; i++) html += '<div class="accordion"><div class="accordion-header" onclick="toggleAcc(this)">' + list[i].title + ' <span>▼</span></div><div class="accordion-content">' + list[i].content.replace(/\n/g, '<br>') + '</div></div>';
+    return html;
+  }
+  document.getElementById('study-chinese').innerHTML = buildHtml(STUDY.chinese); document.getElementById('study-math').innerHTML = buildHtml(STUDY.math); document.getElementById('study-english').innerHTML = buildHtml(STUDY.english); document.getElementById('study-computer').innerHTML = buildHtml(STUDY.computer);
+}
+function initPractice() {
+  practiceIndex = 0; practiceAnswers = new Array(currentQuestions.length).fill(null); isReciteMode = false;
+  document.getElementById('modeBtn').style.display = "block"; document.getElementById('modeBtn').innerText = "背题"; document.getElementById('modeBtn').classList.remove('recite');
+  document.getElementById('timerText').style.display = "none"; document.getElementById('submitBtn').style.display = "none"; document.getElementById('nextBtn').style.display = "block"; document.getElementById('sheetBtn').style.display = "none";
+  showView('view-question'); renderQuestion();
+}
+function startSubject(subject) {
+  appMode = 'practice'; var titles = { chinese: "语文练习", math: "数学练习", english: "英语练习", computer: "计算机练习" };
+  document.getElementById('pageTitle').innerText = titles[subject]; currentQuestions = BANK[subject] || [];
+  if(currentQuestions.length === 0) return alert("该科目暂无题目！"); initPractice();
+}
+function startWrongPractice() {
+  if(wrongBook.length === 0) return alert("错题本还是空的！");
+  appMode = 'wrong'; var allQ = []; for(var k in BANK) allQ = allQ.concat(BANK[k]); currentQuestions = allQ.filter(function(q) { return wrongBook.indexOf(q.id) > -1; });
+  if(currentQuestions.length === 0) return alert("错题已失效"); document.getElementById('pageTitle').innerText = "错题重做"; initPractice();
+}
+function startFavPractice() {
+  if(favBook.length === 0) return alert("还没有收藏题目！");
+  appMode = 'fav'; var allQ = []; for(var k in BANK) allQ = allQ.concat(BANK[k]); currentQuestions = allQ.filter(function(q) { return favBook.indexOf(q.id) > -1; });
+  if(currentQuestions.length === 0) return alert("收藏已失效"); document.getElementById('pageTitle').innerText = "我的收藏"; initPractice();
+}
+function startExam() {
+  appMode = 'exam'; var cPool = (BANK.chinese || []).slice(); var mPool = (BANK.math || []).slice(); var ePool = (BANK.english || []).slice();
+  function shuffle(a) { for(var i=a.length-1; i>0; i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+  shuffle(cPool); shuffle(mPool); shuffle(ePool);
+  var cTake = Math.min(cPool.length, examConfig.chineseCount); var mTake = Math.min(mPool.length, examConfig.mathCount); var eTake = Math.min(ePool.length, examConfig.englishCount);
+  currentQuestions = shuffle(cPool.slice(0, cTake).concat(mPool.slice(0, mTake)).concat(ePool.slice(0, eTake)));
+  if(currentQuestions.length === 0) return alert("题库为空，无法组卷！");
+  examIndex = 0; examAnswers = new Array(currentQuestions.length).fill(null); timeLeft = examConfig.timeLimit * 60;
+  document.getElementById('pageTitle').innerText = "全真模拟考"; document.getElementById('modeBtn').style.display = "none"; document.getElementById('timerText').style.display = "block"; document.getElementById('submitBtn').style.display = "block"; document.getElementById('nextBtn').style.display = "none"; document.getElementById('sheetBtn').style.display = "block";
+  updateTimerDisplay(); clearInterval(examTimer);
+  examTimer = setInterval(function() { timeLeft--; updateTimerDisplay(); if(timeLeft <= 0) { clearInterval(examTimer); alert("考试时间到！自动交卷"); submitExam(); } }, 1000);
+  showView('view-question'); renderQuestion();
+}
+function toggleRecite() { isReciteMode = !isReciteMode; var btn = document.getElementById('modeBtn'); btn.innerText = isReciteMode ? "答题" : "背题"; if(isReciteMode) btn.classList.add('recite'); else btn.classList.remove('recite'); renderQuestion(); }
+function updateTimerDisplay() { var m = Math.floor(timeLeft / 60), s = timeLeft % 60; document.getElementById('timerText').innerText = (m<10?'0':'')+m + ":" + (s<10?'0':'')+s; }
+function openSheet() {
+  var grid = document.getElementById('sheetGrid'); grid.innerHTML = "";
+  for(var i=0; i<currentQuestions.length; i++) { (function(index) {
+      var div = document.createElement('div'); div.className = "grid-item"; if(examAnswers[index] !== null) div.classList.add('done'); if(index === examIndex) div.classList.add('current'); div.innerText = index + 1;
+      div.onclick = function() { examIndex = index; closeSheet(true); renderQuestion(); }; grid.appendChild(div);
+  })(i); } document.getElementById('sheetModal').classList.add('show');
+}
+function closeSheet(e) { if(e === true || (e && e.target.id === 'sheetModal')) document.getElementById('sheetModal').classList.remove('show'); }
+function renderQuestion() {
+  if(!currentQuestions || currentQuestions.length === 0) return;
+  var isPractice = (appMode !== 'exam'); var q = currentQuestions[isPractice ? practiceIndex : examIndex]; if(!q) return;
+  var idx = isPractice ? practiceIndex : examIndex, total = currentQuestions.length; isSubjViewed = false;
+  document.getElementById('progressFill').style.width = ((idx + 1) / total * 100) + "%"; document.getElementById('qIndexText').innerText = " " + (idx + 1) + "/" + total;
+  document.getElementById('qTypeBadge').innerHTML = (q.type === 'text' ? '主观题' : '单选题') + ' <span id="qIndexText">'+(idx + 1)+'/'+total+'</span>';
+  document.getElementById('qText').innerText = q.q;
+  var isFav = favBook.indexOf(q.id) > -1; var favBtn = document.getElementById('favBtn'); favBtn.innerText = isFav ? "★" : "☆"; if(isFav) favBtn.classList.add('active'); else favBtn.classList.remove('active');
+  var optBox = document.getElementById('optionsBox'); optBox.innerHTML = ""; var currentAnswer = isPractice ? practiceAnswers[idx] : examAnswers[idx]; var hasAnswered = currentAnswer !== null;
+  if (isPractice && isReciteMode) hasAnswered = true;
+  if (q.type === 'choice') {
+    if (isPractice && isReciteMode) currentAnswer = q.answer;
+    for (var i = 0; i < q.options.length; i++) { (function(letter, text) {
+        var btn = document.createElement("button"); btn.className = "opt"; btn.innerHTML = '<span class="letter">' + letter + '</span><span>' + text + '</span>';
+        if (hasAnswered) {
+          btn.classList.add('disabled');
+          if (isPractice) {
+            if (letter === currentAnswer && letter === q.answer) btn.className = "opt correct disabled";
+            else if (letter === currentAnswer && letter !== q.answer) btn.className = "opt incorrect disabled";
+            else if (letter !== currentAnswer && letter === q.answer) btn.className = "opt reveal-correct disabled";
+            else btn.className = "opt disabled";
+          } else { if (letter === currentAnswer) btn.classList.add('selected'); }
+        } else { btn.onclick = function() { selectOption(letter); }; } optBox.appendChild(btn);
+    })("ABCD".charAt(i), q.options[i]); }
+  } else {
+    if (hasAnswered || (isPractice && isReciteMode)) {
+      var ansDiv = document.createElement('div'); ansDiv.className = "explain-box show"; ansDiv.innerHTML = '<strong>标准答案</strong><span style="color:var(--green); font-weight:bold;">' + q.answer + '</span>'; optBox.appendChild(ansDiv);
+      if (isPractice && !isReciteMode) {
+        var selfEval = document.createElement('div'); selfEval.innerHTML = '<div style="font-size:14px; margin-bottom:10px; color:var(--muted);">你答对了吗？</div><button class="subj-btn subj-btn-right" onclick="subjRate(true)">我答对了</button><button class="subj-btn subj-btn-wrong" onclick="subjRate(false)">我答错了，加入错题本</button>'; optBox.appendChild(selfEval);
+      }
+    } else {
+      var viewBtn = document.createElement('button'); viewBtn.className = "subj-btn subj-btn-view"; viewBtn.innerText = "查看标准答案"; viewBtn.onclick = function() { isSubjViewed = true; renderQuestion(); }; optBox.appendChild(viewBtn);
+    }
+  }
+  var explainBox = document.getElementById('explainBox'), removeTip = document.getElementById('removeTip'); removeTip.style.display = "none";
+  if (isPractice && hasAnswered && q.type === 'choice') {
+    explainBox.classList.add('show'); var banner = document.getElementById('resultBanner');
+    if (currentAnswer === q.answer) { banner.className = "result-banner ok"; banner.innerText = "✓ 回答正确"; if(appMode === 'wrong' && !isReciteMode) removeTip.style.display = "block"; }
+    else { banner.className = "result-banner no"; banner.innerText = "✕ 回答错误，正确答案是 " + q.answer; }
+    document.getElementById('explainText').innerText = q.explain || "暂无解析";
+  } else if (q.type === 'text' && (hasAnswered || isSubjViewed || isReciteMode)) {
+      explainBox.classList.add('show'); document.getElementById('resultBanner').className = "result-banner ok"; document.getElementById('resultBanner').innerText = "主观题解析"; document.getElementById('explainText').innerText = q.explain || "暂无解析";
+  } else { explainBox.classList.remove('show'); }
+  document.getElementById('prevBtn').disabled = (idx === 0);
+  if (appMode === 'exam') { if (idx === total - 1) { document.getElementById('nextBtn').style.display = "none"; document.getElementById('submitBtn').style.display = "block"; } else { document.getElementById('nextBtn').style.display = "block"; document.getElementById('submitBtn').style.display = "none"; } }
+}
+function subjRate(isRight) { var idx = (appMode === 'exam') ? examIndex : practiceIndex; practiceAnswers[idx] = isRight ? "RIGHT" : "WRONG"; var q = currentQuestions[idx]; if (isRight) removeFromWrong(q.id); else addToWrong(q.id); renderQuestion(); }
+function selectOption(letter) {
+  var isPractice = (appMode !== 'exam');
+  if (isPractice) {
+    practiceAnswers[practiceIndex] = letter; var q = currentQuestions[practiceIndex];
+    if (!isReciteMode) { if (letter !== q.answer) addToWrong(q.id); else if (appMode === 'wrong') removeFromWrong(q.id); }
+  } else { examAnswers[examIndex] = letter; } renderQuestion();
+}
+function prevQuestion() { if (appMode === 'exam') { if (examIndex > 0) { examIndex--; renderQuestion(); } } else { if (practiceIndex > 0) { practiceIndex--; renderQuestion(); } } }
+function nextQuestion() { if (appMode === 'exam') { if (examIndex < currentQuestions.length - 1) { examIndex++; renderQuestion(); } } else { if (practiceIndex < currentQuestions.length - 1) { practiceIndex++; renderQuestion(); } } }
+function submitExam() {
+  var unAnswered = 0; for (var i = 0; i < currentQuestions.length; i++) if (examAnswers[i] === null) unAnswered++;
+  if (unAnswered > 0 && timeLeft > 0) { if(!confirm("还有 " + unAnswered + " 题未作答，确定交卷吗？")) return; }
+  clearInterval(examTimer); var rightCount = 0;
+  for (var i = 0; i < currentQuestions.length; i++) { if (examAnswers[i] === currentQuestions[i].answer) rightCount++; else addToWrong(currentQuestions[i].id); }
+  var score = Math.round(rightCount / currentQuestions.length * 100); alert("交卷成功！\n得分：" + score + " 分\n答对：" + rightCount + " / " + currentQuestions.length + " 题"); goBackHome();
+}
+loadCloudData();
+</script>
+</body>
+</html>
